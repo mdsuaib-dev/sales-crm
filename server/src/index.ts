@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import prisma from "./prisma";
 import bcrypt from "bcryptjs";
-
+import jwt from "jsonwebtoken";
 const app = express();
 
 const PORT = 5000;
@@ -360,10 +360,21 @@ app.post("/api/login", async (req, res) => {
         message: "Invalid email or password",
       });
     }
+    const token = jwt.sign(
+    {
+      id: user.id,
+      role: user.role,
+    },
+    process.env.JWT_SECRET!,
+    {
+      expiresIn: "8h",
+    }
+    );
 
     // Never send passwordHash to frontend
     res.json({
       message: "Login successful",
+      token,
       user: {
         id: user.id,
         name: user.name,
