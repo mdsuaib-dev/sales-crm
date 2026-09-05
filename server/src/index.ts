@@ -1,10 +1,10 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import prisma from "./prisma";
+import prisma from "./prisma.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { authenticate, authorize } from "./middleware/auth";
+import { authenticate, authorize } from "./middleware/auth.js";
 const app = express();
 
 const PORT = 5000;

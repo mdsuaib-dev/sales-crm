@@ -30,10 +30,14 @@ export function authenticate(
   const token = authHeader.split(" ")[1];
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as {
-      id: number;
-      role: string;
-    };
+    if (!JWT_SECRET) {
+  return res.status(500).json({ message: "JWT secret is not configured" });
+}
+
+const decoded = jwt.verify(token, JWT_SECRET) as unknown as {
+  id: number;
+  role: string;
+};
 
     req.user = {
       id: decoded.id,
