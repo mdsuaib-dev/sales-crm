@@ -38,7 +38,7 @@ type LoggedInUser = {
   role: string;
 };
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const getAuthHeaders = (): Record<string, string> => {
   const token = localStorage.getItem("salescrm_token");
 
@@ -167,6 +167,10 @@ function App() {
 
   const [deals, setDeals] =
     useState<Deal[]>([]);
+  const [allDeals, setAllDeals] =
+    useState<Deal[]>([]);
+  const [allCompanies, setAllCompanies] =
+    useState<Company[]>([]);
 
   const [loading, setLoading] =
     useState(false);
@@ -178,6 +182,12 @@ function App() {
   const [dealStageFilter, setDealStageFilter] = useState("");
   const [dealCompanyFilter, setDealCompanyFilter] = useState("");
   const [dealOwnerFilter, setDealOwnerFilter] = useState("");
+  const [dealSortBy, setDealSortBy] = useState("createdAt");
+  const [dealSortOrder, setDealSortOrder] = useState("desc");
+  const [dealPage, setDealPage] = useState(1);
+  const [dealLimit] = useState(10);
+  const [dealTotal, setDealTotal] = useState(0);
+  const [dealTotalPages, setDealTotalPages] = useState(0);
 
   const [companyForm, setCompanyForm] =
     useState({
@@ -285,23 +295,71 @@ function App() {
     }
   };
 
-  const fetchDeals = async () => {
+  const fetchAllCompanies = async () => {
+    try {
+      const response = await fetch(`${API_URL}/companies?all=true`, {
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json();
+      if (response.ok && data.companies) {
+        setAllCompanies(data.companies);
+      }
+    } catch (err) {
+      console.error("Failed to load all companies", err);
+    }
+  };
+
+  const fetchAllDeals = async () => {
+    try {
+      const response = await fetch(`${API_URL}/deals?all=true`, {
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json();
+      if (response.ok && data.deals) {
+        setAllDeals(data.deals);
+      }
+    } catch (err) {
+      console.error("Failed to load all deals", err);
+    }
+  };
+
+  const fetchDeals = async (pageOverride?: number) => {
     try {
       setLoading(true);
+      const currentPage =
+        pageOverride !== undefined ? pageOverride : dealPage;
+      const params = new URLSearchParams({
+        page: String(currentPage),
+        limit: String(dealLimit),
+        sortBy: dealSortBy,
+        order: dealSortOrder,
+      });
 
-      const response = await fetch(
-        `${API_URL}/deals`,{
-        headers: getAuthHeaders(),}
-      );
+      if (dealSearch.trim()) {
+        params.append("search", dealSearch.trim());
+      }
+      if (dealStageFilter) {
+        params.append("stage", dealStageFilter);
+      }
+      if (dealCompanyFilter) {
+        params.append("companyId", dealCompanyFilter);
+      }
+      if (dealOwnerFilter) {
+        params.append("ownerId", dealOwnerFilter);
+      }
+
+      const response = await fetch(`${API_URL}/deals?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
 
       if (!response.ok) {
-        throw new Error(
-          "Failed to fetch deals"
-        );
+        throw new Error("Failed to fetch deals");
       }
 
       const data = await response.json();
-      setDeals(data);
+      setDeals(data.deals || []);
+      setDealTotal(data.total || 0);
+      setDealTotalPages(data.totalPages || 0);
     } catch (error) {
       console.error(error);
       setError("Could not load deals");
@@ -316,67 +374,29 @@ function App() {
     }
 
     fetchCompanies();
+    fetchAllCompanies();
     fetchUsers();
-    fetchDeals();
+    fetchDeals(1);
+    fetchAllDeals();
   }, [loggedInUser]);
-//   const filteredCompanies = companies.filter((company) => {
-//   const search = companySearch.toLowerCase().trim();
 
-//   if (!search) {
-//     return true;
-//   }
+  useEffect(() => {
+    if (!loggedInUser) {
+      return;
+    }
 
-//   return (
-//     company.name.toLowerCase().includes(search) ||
-//     (company.industry || "")
-//       .toLowerCase()
-//       .includes(search) ||
-//     (company.contactPerson || "")
-//       .toLowerCase()
-//       .includes(search) ||
-//     (company.email || "")
-//       .toLowerCase()
-//       .includes(search)
-//   );
-// });
-const filteredCompanies = companies;
-const filteredDeals = deals.filter((deal) => {
-  const search = dealSearch.toLowerCase().trim();
+    fetchDeals();
+  }, [
+    dealPage,
+    dealSortBy,
+    dealSortOrder,
+    dealStageFilter,
+    dealCompanyFilter,
+    dealOwnerFilter,
+  ]);
 
-  const matchesSearch =
-    !search ||
-    deal.title.toLowerCase().includes(search) ||
-    (deal.description || "")
-      .toLowerCase()
-      .includes(search) ||
-    (deal.company?.name || "")
-      .toLowerCase()
-      .includes(search) ||
-    (deal.owner?.name || "")
-      .toLowerCase()
-      .includes(search);
-
-  const matchesStage =
-    !dealStageFilter ||
-    deal.stage === dealStageFilter;
-
-  const matchesCompany =
-    !dealCompanyFilter ||
-    deal.companyId.toString() ===
-      dealCompanyFilter;
-
-  const matchesOwner =
-    !dealOwnerFilter ||
-    deal.ownerId.toString() ===
-      dealOwnerFilter;
-
-  return (
-    matchesSearch &&
-    matchesStage &&
-    matchesCompany &&
-    matchesOwner
-  );
-});
+  const filteredCompanies = companies;
+  const filteredDeals = deals;
 
   // =========================
   // COMPANY FUNCTIONS
@@ -628,6 +648,7 @@ const getAllowedNextStages = (currentStage: string) => {
 
       resetDealForm();
       await fetchDeals();
+      await fetchAllDeals();
     } catch (error) {
       console.error(error);
       setError(
@@ -698,6 +719,7 @@ const getAllowedNextStages = (currentStage: string) => {
       }
 
       await fetchDeals();
+      await fetchAllDeals();
     } catch (error) {
       console.error(error);
       setError(
@@ -800,8 +822,9 @@ const getAllowedNextStages = (currentStage: string) => {
   // DASHBOARD DATA
   // =========================
 
+  const dashboardDeals = allDeals.length > 0 ? allDeals : deals;
   const totalDealValue =
-    deals.reduce(
+    dashboardDeals.reduce(
       (total, deal) =>
         total +
         Number(deal.value || 0),
@@ -923,12 +946,16 @@ const getAllowedNextStages = (currentStage: string) => {
     <div className="cards">
       <div className="card">
         <span>Total Companies</span>
-        <strong>{companies.length}</strong>
+        <strong>
+          {allCompanies.length > 0
+            ? allCompanies.length
+            : companyTotal || companies.length}
+        </strong>
       </div>
 
       <div className="card">
         <span>Total Deals</span>
-        <strong>{deals.length}</strong>
+        <strong>{dashboardDeals.length}</strong>
       </div>
 
       <div className="card">
@@ -940,7 +967,7 @@ const getAllowedNextStages = (currentStage: string) => {
         <span>Won Deals</span>
         <strong>
           {
-            deals.filter(
+            dashboardDeals.filter(
               (deal) => deal.stage === "WON"
             ).length
           }
@@ -968,7 +995,7 @@ const getAllowedNextStages = (currentStage: string) => {
           "NEGOTIATION",
           "WON",
         ].map((stage) => {
-          const stageDeals = deals.filter(
+          const stageDeals = dashboardDeals.filter(
             (deal) => deal.stage === stage
           );
 
@@ -1027,8 +1054,7 @@ const getAllowedNextStages = (currentStage: string) => {
                       </span>
 
                       <b>
-                        ₹
-                        {Number(
+                        ₹{Number(
                           deal.value || 0
                         ).toLocaleString()}
                       </b>
@@ -1049,7 +1075,7 @@ const getAllowedNextStages = (currentStage: string) => {
 
               <span>
                 {
-                  deals.filter(
+                  dashboardDeals.filter(
                     (deal) =>
                       deal.stage === "LOST"
                   ).length
@@ -1060,7 +1086,7 @@ const getAllowedNextStages = (currentStage: string) => {
 
             <strong>
               ₹
-              {deals
+              {dashboardDeals
                 .filter(
                   (deal) =>
                     deal.stage === "LOST"
@@ -1078,7 +1104,7 @@ const getAllowedNextStages = (currentStage: string) => {
           </div>
 
           <div className="pipeline-deals">
-            {deals
+            {dashboardDeals
               .filter(
                 (deal) =>
                   deal.stage === "LOST"
@@ -1115,7 +1141,7 @@ const getAllowedNextStages = (currentStage: string) => {
     <div className="panel">
       <h3>Recent Deals</h3>
 
-      {deals.length === 0 ? (
+      {dashboardDeals.length === 0 ? (
         <p>No deals available.</p>
       ) : (
         <table>
@@ -1130,7 +1156,7 @@ const getAllowedNextStages = (currentStage: string) => {
           </thead>
 
           <tbody>
-            {deals.slice(0, 10).map((deal) => (
+            {dashboardDeals.slice(0, 10).map((deal) => (
               <tr key={deal.id}>
                 <td>{deal.title}</td>
 
@@ -1704,20 +1730,17 @@ const getAllowedNextStages = (currentStage: string) => {
                     Select Company *
                   </option>
 
-                  {companies.map(
-                    (company) => (
-                      <option
-                        key={
-                          company.id
-                        }
-                        value={
-                          company.id
-                        }
-                      >
-                        {company.name}
-                      </option>
-                    )
-                  )}
+                  {(allCompanies.length > 0
+                    ? allCompanies
+                    : companies
+                  ).map((company) => (
+                    <option
+                      key={company.id}
+                      value={company.id}
+                    >
+                      {company.name}
+                    </option>
+                  ))}
                 </select>
 
                 <select
@@ -1809,13 +1832,30 @@ const getAllowedNextStages = (currentStage: string) => {
     onChange={(event) =>
       setDealSearch(event.target.value)
     }
+    onKeyDown={(event) => {
+      if (event.key === "Enter") {
+        setDealPage(1);
+        fetchDeals(1);
+      }
+    }}
   />
+
+  <button
+    type="button"
+    onClick={() => {
+      setDealPage(1);
+      fetchDeals(1);
+    }}
+  >
+    Search
+  </button>
 
   <select
     value={dealStageFilter}
-    onChange={(event) =>
-      setDealStageFilter(event.target.value)
-    }
+    onChange={(event) => {
+      setDealStageFilter(event.target.value);
+      setDealPage(1);
+    }}
   >
     <option value="">All Stages</option>
     <option value="NEW">NEW</option>
@@ -1828,13 +1868,17 @@ const getAllowedNextStages = (currentStage: string) => {
 
   <select
     value={dealCompanyFilter}
-    onChange={(event) =>
-      setDealCompanyFilter(event.target.value)
-    }
+    onChange={(event) => {
+      setDealCompanyFilter(event.target.value);
+      setDealPage(1);
+    }}
   >
     <option value="">All Companies</option>
 
-    {companies.map((company) => (
+    {(allCompanies.length > 0
+      ? allCompanies
+      : companies
+    ).map((company) => (
       <option
         key={company.id}
         value={company.id}
@@ -1846,9 +1890,10 @@ const getAllowedNextStages = (currentStage: string) => {
 
   <select
     value={dealOwnerFilter}
-    onChange={(event) =>
-      setDealOwnerFilter(event.target.value)
-    }
+    onChange={(event) => {
+      setDealOwnerFilter(event.target.value);
+      setDealPage(1);
+    }}
   >
     <option value="">All Owners</option>
 
@@ -1862,6 +1907,31 @@ const getAllowedNextStages = (currentStage: string) => {
     ))}
   </select>
 
+  <select
+    value={dealSortBy}
+    onChange={(event) => {
+      setDealSortBy(event.target.value);
+      setDealPage(1);
+    }}
+  >
+    <option value="createdAt">Created Date</option>
+    <option value="value">Value</option>
+    <option value="title">Title</option>
+    <option value="expectedCloseDate">Close Date</option>
+    <option value="stage">Stage</option>
+  </select>
+
+  <select
+    value={dealSortOrder}
+    onChange={(event) => {
+      setDealSortOrder(event.target.value);
+      setDealPage(1);
+    }}
+  >
+    <option value="desc">Descending</option>
+    <option value="asc">Ascending</option>
+  </select>
+
   <button
     type="button"
     onClick={() => {
@@ -1869,6 +1939,9 @@ const getAllowedNextStages = (currentStage: string) => {
       setDealStageFilter("");
       setDealCompanyFilter("");
       setDealOwnerFilter("");
+      setDealSortBy("createdAt");
+      setDealSortOrder("desc");
+      setDealPage(1);
     }}
   >
     Clear Filters
@@ -1876,7 +1949,7 @@ const getAllowedNextStages = (currentStage: string) => {
 </div>
 
 <p className="filter-result">
-  Showing {filteredDeals.length} of {deals.length} deals
+  Showing {deals.length} of {dealTotal} deals
 </p>
 
                 {loading ? (
@@ -1889,7 +1962,8 @@ const getAllowedNextStages = (currentStage: string) => {
                     No deals found.
                   </p>
                 ) : (
-                  <table>
+                  <>
+                    <table>
                     <thead>
                       <tr>
                         <th>
@@ -2015,6 +2089,7 @@ const getAllowedNextStages = (currentStage: string) => {
                                               }
 
                                               await fetchDeals();
+                                              await fetchAllDeals();
                                           } catch (error) {
                                             console.error("Reopen error:", error);
 
@@ -2035,6 +2110,38 @@ const getAllowedNextStages = (currentStage: string) => {
                             )}
                     </tbody>
                   </table>
+
+                  <div style={{ marginTop: "15px" }}>
+                    <button
+                      disabled={dealPage <= 1}
+                      onClick={() => {
+                        setDealPage((prev) => prev - 1);
+                      }}
+                    >
+                      Previous
+                    </button>
+
+                    <span style={{ margin: "0 15px" }}>
+                      Page {dealPage} of {dealTotalPages || 1}
+                    </span>
+
+                    <button
+                      disabled={
+                        dealPage >= dealTotalPages ||
+                        dealTotalPages === 0
+                      }
+                      onClick={() => {
+                        setDealPage((prev) => prev + 1);
+                      }}
+                    >
+                      Next
+                    </button>
+
+                    <span style={{ marginLeft: "15px" }}>
+                      Total: {dealTotal}
+                    </span>
+                  </div>
+                  </>
                 )}
               </div>
             </>

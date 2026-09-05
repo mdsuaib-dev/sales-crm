@@ -114,6 +114,21 @@ app.get("/api/companies", authenticate, async (req, res) => {
       100
     );
 
+    if (req.query.all === "true") {
+      const companies = await prisma.company.findMany({
+        where: { isArchived: false },
+        orderBy: { name: "asc" },
+      });
+
+      return res.json({
+        companies,
+        total: companies.length,
+        page: 1,
+        limit: companies.length,
+        totalPages: 1,
+      });
+    }
+
     const allowedSortFields = ["name", "createdAt"];
 
     const safeSortBy = allowedSortFields.includes(sortBy)
@@ -413,19 +428,136 @@ app.delete("/api/companies/:id",authenticate,
   }
 });
 
-//Deal
-app.get("/api/deals",authenticate, async (req, res) => {
+app.get("/api/deals", authenticate, async (req, res) => {
   try {
+    const search = String(req.query.search || "").trim();
+    const stage = String(req.query.stage || "").trim();
+    const companyId = req.query.companyId ? Number(req.query.companyId) : undefined;
+    const ownerId = req.query.ownerId ? Number(req.query.ownerId) : undefined;
+    const isAll = req.query.all === "true";
+
+    const sortBy = String(req.query.sortBy || "createdAt");
+    const order = String(req.query.order || "desc");
+
+    const allowedSortFields = [
+      "createdAt",
+      "value",
+      "title",
+      "expectedCloseDate",
+      "stage",
+    ];
+
+    const safeSortBy = allowedSortFields.includes(sortBy)
+      ? sortBy
+      : "createdAt";
+    const safeOrder = order === "asc" ? ("asc" as const) : ("desc" as const);
+
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(
+      Math.max(Number(req.query.limit) || 10, 1),
+      100
+    );
+
+    const where: any = {};
+
+    if (stage) {
+      where.stage = stage;
+    }
+
+    if (companyId && !isNaN(companyId)) {
+      where.companyId = companyId;
+    }
+
+    if (ownerId && !isNaN(ownerId)) {
+      where.ownerId = ownerId;
+    }
+
+    if (search) {
+      where.OR = [
+        {
+          title: {
+            contains: search,
+            mode: "insensitive" as const,
+          },
+        },
+        {
+          description: {
+            contains: search,
+            mode: "insensitive" as const,
+          },
+        },
+        {
+          requirements: {
+            contains: search,
+            mode: "insensitive" as const,
+          },
+        },
+        {
+          company: {
+            name: {
+              contains: search,
+              mode: "insensitive" as const,
+            },
+          },
+        },
+        {
+          owner: {
+            name: {
+              contains: search,
+              mode: "insensitive" as const,
+            },
+          },
+        },
+      ];
+    }
+
+    if (isAll) {
+      const deals = await prisma.deal.findMany({
+        where,
+        include: {
+          company: true,
+          owner: true,
+        },
+        orderBy: {
+          [safeSortBy]: safeOrder,
+        },
+      });
+
+      return res.json({
+        deals,
+        total: deals.length,
+        page: 1,
+        limit: deals.length,
+        totalPages: 1,
+      });
+    }
+
+    const total = await prisma.deal.count({
+      where,
+    });
+
     const deals = await prisma.deal.findMany({
+      where,
       include: {
         company: true,
         owner: true,
       },
+      orderBy: {
+        [safeSortBy]: safeOrder,
+      },
+      skip: (page - 1) * limit,
+      take: limit,
     });
 
-    res.json(deals);
+    res.json({
+      deals,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    });
   } catch (error) {
-    console.error(error);
+    console.error("Fetch deals error:", error);
 
     res.status(500).json({
       message: "Failed to fetch deals",
