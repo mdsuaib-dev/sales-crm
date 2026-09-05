@@ -39,6 +39,13 @@ type LoggedInUser = {
 };
 
 const API_URL = "http://localhost:5000/api";
+const getAuthHeaders = (): Record<string, string> => {
+  const token = localStorage.getItem("salescrm_token");
+
+  return token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
+};
 
 function App() {
   // =========================
@@ -103,6 +110,10 @@ function App() {
         "salescrm_user",
         JSON.stringify(data.user)
       );
+      localStorage.setItem(
+        "salescrm_token",
+        data.token
+      );
 
       setLoggedInUser(data.user);
 
@@ -121,6 +132,7 @@ function App() {
 
   const handleLogout = () => {
     localStorage.removeItem("salescrm_user");
+    localStorage.removeItem("salescrm_token");
     setLoggedInUser(null);
   };
 
@@ -129,14 +141,29 @@ function App() {
   // =========================
 
   const [page, setPage] = useState<
-    "dashboard" | "companies" | "deals"
+    "dashboard" | "companies" | "deals" | "users"
   >("dashboard");
 
   const [companies, setCompanies] =
     useState<Company[]>([]);
+  const [archivedCompanies, setArchivedCompanies] = 
+    useState<Company[]>([]);
+  
+  const [companySearch, setCompanySearch] = 
+    useState("");
+  const [companySortBy, setCompanySortBy] = useState("name");
+  const [companySortOrder, setCompanySortOrder] = useState("asc");
+  const [companyPage, setCompanyPage] = useState(1);
+  const [companyLimit] = useState(5);
+  const [companyTotal, setCompanyTotal] = useState(0);
+  const [companyTotalPages, setCompanyTotalPages] = useState(0);
 
   const [users, setUsers] =
     useState<User[]>([]);
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [userPassword, setUserPassword] = useState("");
+  const [userRole, setUserRole] = useState("SALES");
 
   const [deals, setDeals] =
     useState<Deal[]>([]);
@@ -145,7 +172,7 @@ function App() {
     useState(false);
 
   const [error, setError] = useState("");
-  const [companySearch, setCompanySearch] = useState("");
+  
 
   const [dealSearch, setDealSearch] = useState("");
   const [dealStageFilter, setDealStageFilter] = useState("");
@@ -160,14 +187,14 @@ function App() {
       contactPerson: "",
       industry: "",
     });
-
+  const [stageChangeReason, setStageChangeReason] = useState("");
   const [dealForm, setDealForm] =
     useState({
       title: "",
       description: "",
       requirements: "",
       value: "",
-      stage: "LEAD",
+      stage: "NEW",
       expectedCloseDate: "",
       companyId: "",
       ownerId: "",
@@ -185,9 +212,11 @@ function App() {
 
   const fetchCompanies = async () => {
     try {
-      const response = await fetch(
-        `${API_URL}/companies`
-      );
+      const response = await fetch(`${API_URL}/companies?page=${companyPage}&limit=${companyLimit}&sortBy=${companySortBy}&order=${companySortOrder}`, {
+      headers: getAuthHeaders(),
+      });
+
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -195,18 +224,51 @@ function App() {
         );
       }
 
-      const data = await response.json();
-      setCompanies(data);
+      
+      setCompanies(data.companies);
+      setCompanyTotal(data.total);
+      setCompanyTotalPages(data.totalPages);
     } catch (error) {
       console.error(error);
       setError("Could not load companies");
     }
   };
+  const fetchArchivedCompanies = async () => {
+  try {
+    const response = await fetch(
+      `${API_URL}/companies/archived`,
+      {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.message || "Failed to fetch archived companies"
+      );
+    }
+
+    setArchivedCompanies(data);
+  } catch (error) {
+    console.error("Fetch archived companies error:", error);
+
+    setError(
+      error instanceof Error
+        ? error.message
+        : "Could not fetch archived companies"
+    );
+  }
+};
 
   const fetchUsers = async () => {
     try {
       const response = await fetch(
-        `${API_URL}/users`
+        `${API_URL}/users`, {
+        headers: getAuthHeaders(),}
       );
 
       if (!response.ok) {
@@ -228,7 +290,8 @@ function App() {
       setLoading(true);
 
       const response = await fetch(
-        `${API_URL}/deals`
+        `${API_URL}/deals`,{
+        headers: getAuthHeaders(),}
       );
 
       if (!response.ok) {
@@ -256,26 +319,27 @@ function App() {
     fetchUsers();
     fetchDeals();
   }, [loggedInUser]);
-  const filteredCompanies = companies.filter((company) => {
-  const search = companySearch.toLowerCase().trim();
+//   const filteredCompanies = companies.filter((company) => {
+//   const search = companySearch.toLowerCase().trim();
 
-  if (!search) {
-    return true;
-  }
+//   if (!search) {
+//     return true;
+//   }
 
-  return (
-    company.name.toLowerCase().includes(search) ||
-    (company.industry || "")
-      .toLowerCase()
-      .includes(search) ||
-    (company.contactPerson || "")
-      .toLowerCase()
-      .includes(search) ||
-    (company.email || "")
-      .toLowerCase()
-      .includes(search)
-  );
-});
+//   return (
+//     company.name.toLowerCase().includes(search) ||
+//     (company.industry || "")
+//       .toLowerCase()
+//       .includes(search) ||
+//     (company.contactPerson || "")
+//       .toLowerCase()
+//       .includes(search) ||
+//     (company.email || "")
+//       .toLowerCase()
+//       .includes(search)
+//   );
+// });
+const filteredCompanies = companies;
 const filteredDeals = deals.filter((deal) => {
   const search = dealSearch.toLowerCase().trim();
 
@@ -354,6 +418,7 @@ const filteredDeals = deals.filter((deal) => {
         headers: {
           "Content-Type":
             "application/json",
+            ...getAuthHeaders(),
         },
         body: JSON.stringify(
           companyForm
@@ -413,6 +478,9 @@ const filteredDeals = deals.filter((deal) => {
         `${API_URL}/companies/${id}`,
         {
           method: "DELETE",
+          headers: {
+          ...getAuthHeaders(),
+          },
         }
       );
 
@@ -449,6 +517,34 @@ const filteredDeals = deals.filter((deal) => {
   // =========================
   // DEAL FUNCTIONS
   // =========================
+
+  const DEAL_STAGES = [
+  "NEW",
+  "QUALIFIED",
+  "PROPOSAL",
+  "NEGOTIATION",
+  "WON",
+  "LOST",
+];
+
+const getAllowedNextStages = (currentStage: string) => {
+  switch (currentStage) {
+    case "NEW":
+      return ["QUALIFIED"];
+
+    case "QUALIFIED":
+      return ["NEW", "PROPOSAL"];
+
+    case "PROPOSAL":
+      return ["QUALIFIED", "NEGOTIATION"];
+
+    case "NEGOTIATION":
+      return ["PROPOSAL", "WON", "LOST"];
+
+    default:
+      return [];
+  }
+};
 
   const handleDealChange = (
     event: React.ChangeEvent<
@@ -504,9 +600,11 @@ const filteredDeals = deals.filter((deal) => {
         headers: {
           "Content-Type":
             "application/json",
+             ...getAuthHeaders(),
         },
         body: JSON.stringify({
           ...dealForm,
+          stageChangeReason,
           value: dealForm.value
             ? Number(dealForm.value)
             : null,
@@ -587,6 +685,9 @@ const filteredDeals = deals.filter((deal) => {
         `${API_URL}/deals/${id}`,
         {
           method: "DELETE",
+          headers: {
+          ...getAuthHeaders(),
+          },
         }
       );
 
@@ -607,13 +708,14 @@ const filteredDeals = deals.filter((deal) => {
 
   const resetDealForm = () => {
     setEditingDealId(null);
+    setStageChangeReason("");
 
     setDealForm({
       title: "",
       description: "",
       requirements: "",
       value: "",
-      stage: "LEAD",
+      stage: "NEW",
       expectedCloseDate: "",
       companyId: "",
       ownerId: "",
@@ -778,6 +880,20 @@ const filteredDeals = deals.filter((deal) => {
           >
             Deals
           </button>
+            {loggedInUser.role === "ADMIN" && (
+            <button
+              className={
+                page === "users"
+                  ? "active"
+                  : ""
+              }
+              onClick={() =>
+                setPage("users")
+              }
+            >
+              Users
+            </button>)
+            }
         </aside>
 
         <main className="content">
@@ -817,16 +933,7 @@ const filteredDeals = deals.filter((deal) => {
 
       <div className="card">
         <span>Pipeline Value</span>
-        <strong>
-          ₹
-          {deals
-            .reduce(
-              (total, deal) =>
-                total + Number(deal.value || 0),
-              0
-            )
-            .toLocaleString()}
-        </strong>
+        <strong>₹{totalDealValue.toLocaleString()}</strong>
       </div>
 
       <div className="card">
@@ -855,7 +962,7 @@ const filteredDeals = deals.filter((deal) => {
 
       <div className="pipeline">
         {[
-          "LEAD",
+          "NEW",
           "QUALIFIED",
           "PROPOSAL",
           "NEGOTIATION",
@@ -1155,6 +1262,169 @@ const filteredDeals = deals.filter((deal) => {
                 <h2>
                   Companies
                 </h2>
+                <div style={{ marginBottom: "15px" }}>
+  <input
+    type="text"
+    placeholder="Search companies..."
+    value={companySearch}
+    onChange={(e) => setCompanySearch(e.target.value)}
+  />
+
+  <button
+    onClick={async () => {
+      try {
+        const response = await fetch(
+          `${API_URL}/companies?search=${encodeURIComponent(companySearch)
+          }&sortBy=${companySortBy}&order=${companySortOrder}&page=${companyPage}&limit=${companyLimit}`,
+          {
+            headers: {
+              ...getAuthHeaders(),
+            },
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.message || "Failed to search companies"
+          );
+        }
+
+        setCompanies(data.companies);
+        setCompanyTotal(data.total);
+        setCompanyTotalPages(data.totalPages);
+      } catch (error) {
+        console.error("Company search error:", error);
+
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Could not search companies"
+        );
+      }
+    }}
+  >
+    Search
+  </button>
+
+  <button
+    onClick={() => {
+      setCompanySearch("");
+      fetchCompanies();
+    }}
+    style={{ marginLeft: "10px" }}
+  >
+    Clear
+  </button>
+  <select
+  value={companySortBy}
+  onChange={(e) => setCompanySortBy(e.target.value)}
+  style={{ marginLeft: "10px" }}
+>
+  <option value="name">Name</option>
+  <option value="createdAt">Created Date</option>
+</select>
+
+<select
+  value={companySortOrder}
+  onChange={(e) => setCompanySortOrder(e.target.value)}
+  style={{ marginLeft: "10px" }}
+>
+  <option value="asc">Ascending</option>
+  <option value="desc">Descending</option>
+</select>
+</div>
+  {(loggedInUser.role === "ADMIN" ||
+  loggedInUser.role === "MANAGER") && (
+  <>
+    <button onClick={fetchArchivedCompanies}>
+      Show Archived Companies
+    </button>
+
+    {archivedCompanies.length > 0 && (
+      <div style={{ marginTop: "20px" }}>
+        <h3>Archived Companies</h3>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Website</th>
+              <th>Email</th>
+              <th>Contact Person</th>
+              <th>Industry</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {archivedCompanies.map((company) => (
+              <tr key={company.id}>
+                <td>{company.name}</td>
+                <td>{company.website || "-"}</td>
+                <td>{company.email || "-"}</td>
+                <td>{company.contactPerson || "-"}</td>
+                <td>{company.industry || "-"}</td>
+
+                <td>
+                  <button
+                    onClick={async () => {
+                      if (
+                        !window.confirm(
+                          "Restore this company?"
+                        )
+                      ) {
+                        return;
+                      }
+
+                      try {
+                        const response = await fetch(
+                          `${API_URL}/companies/${company.id}/restore`,
+                          {
+                            method: "POST",
+                            headers: {
+                              ...getAuthHeaders(),
+                            },
+                          }
+                        );
+
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                          throw new Error(
+                            data.message ||
+                              "Failed to restore company"
+                          );
+                        }
+
+                        await fetchCompanies();
+                        await fetchArchivedCompanies();
+                      } catch (error) {
+                        console.error(
+                          "Restore company error:",
+                          error
+                        );
+
+                        setError(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not restore company"
+                        );
+                      }
+                    }}
+                  >
+                    Restore
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </>
+)}
                 <div className="filter-bar">
   <input
     type="text"
@@ -1225,31 +1495,98 @@ const filteredDeals = deals.filter((deal) => {
                           </td>
 
                           <td>
-                            <button
-                              onClick={() =>
-                                handleEditCompany(
-                                  company
-                                )
-                              }
-                            >
-                              Edit
-                            </button>
+  <button
+    onClick={() =>
+      handleEditCompany(company)
+    }
+  >
+    Edit
+  </button>
 
-                            <button
-                              onClick={() =>
-                                handleDeleteCompany(
-                                  company.id
-                                )
-                              }
-                            >
-                              Delete
-                            </button>
-                          </td>
+  <button
+    onClick={() =>
+      handleDeleteCompany(company.id)
+    }
+  >
+    Delete
+  </button>
+  {(loggedInUser.role === "ADMIN" ||
+  loggedInUser.role === "MANAGER") && (
+  <button
+    onClick={async () => {
+      if (!window.confirm("Archive this company?")) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_URL}/companies/${company.id}/archive`,
+          {
+            method: "POST",
+            headers: {
+              ...getAuthHeaders(),
+            },
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.message || "Failed to archive company"
+          );
+        }
+
+        await fetchCompanies();
+      } catch (error) {
+        console.error("Archive company error:", error);
+
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Could not archive company"
+        );
+      }
+    }}
+  >
+    Archive
+  </button>
+)}
+</td>
                         </tr>
                       )
                     )}
                   </tbody>
                 </table>
+                <div style={{ marginTop: "15px" }}>
+  <button
+    disabled={companyPage <= 1}
+    onClick={() => {
+      setCompanyPage((prev) => prev - 1);
+    }}
+  >
+    Previous
+  </button>
+
+  <span style={{ margin: "0 15px" }}>
+    Page {companyPage} of {companyTotalPages || 1}
+  </span>
+
+  <button
+    disabled={
+      companyPage >= companyTotalPages ||
+      companyTotalPages === 0
+    }
+    onClick={() => {
+      setCompanyPage((prev) => prev + 1);
+    }}
+  >
+    Next
+  </button>
+
+  <span style={{ marginLeft: "15px" }}>
+    Total: {companyTotal}
+  </span>
+</div>
               </div>
             </>
           )}
@@ -1295,39 +1632,63 @@ const filteredDeals = deals.filter((deal) => {
                 />
 
                 <select
-                  name="stage"
-                  value={
-                    dealForm.stage
-                  }
-                  onChange={
-                    handleDealChange
-                  }
-                  required
-                >
-                  <option value="LEAD">
-                    Lead
-                  </option>
+  name="stage"
+  value={dealForm.stage}
+  onChange={(event) => {
+    const newStage = event.target.value;
 
-                  <option value="QUALIFIED">
-                    Qualified
-                  </option>
+    if (editingDealId) {
+      const currentIndex =
+        DEAL_STAGES.indexOf(dealForm.stage);
 
-                  <option value="PROPOSAL">
-                    Proposal
-                  </option>
+      const newIndex =
+        DEAL_STAGES.indexOf(newStage);
 
-                  <option value="NEGOTIATION">
-                    Negotiation
-                  </option>
+      if (newIndex < currentIndex) {
+        const reason = window.prompt(
+          "Reason for moving the deal backward:"
+        );
 
-                  <option value="WON">
-                    Won
-                  </option>
+        if (!reason || !reason.trim()) {
+          return;
+        }
 
-                  <option value="LOST">
-                    Lost
-                  </option>
-                </select>
+        setStageChangeReason(reason.trim());
+      } else {
+        setStageChangeReason("");
+      }
+    }
+
+    setDealForm({
+      ...dealForm,
+      stage: newStage,
+    });
+  }}
+  required
+>
+  {editingDealId ? (
+    <>
+      <option value={dealForm.stage}>
+        {dealForm.stage}
+      </option>
+
+      {getAllowedNextStages(dealForm.stage)
+        .filter(
+          (stage) => stage !== dealForm.stage
+        )
+        .map((stage) => (
+          <option
+            key={stage}
+            value={stage}
+          >
+            {stage}
+          </option>
+        ))}
+    </>
+  ) : (
+    <option value="NEW">NEW</option>
+  )}
+</select>
 
                 <select
                   name="companyId"
@@ -1457,7 +1818,7 @@ const filteredDeals = deals.filter((deal) => {
     }
   >
     <option value="">All Stages</option>
-    <option value="LEAD">Lead</option>
+    <option value="NEW">NEW</option>
     <option value="QUALIFIED">Qualified</option>
     <option value="PROPOSAL">Proposal</option>
     <option value="NEGOTIATION">Negotiation</option>
@@ -1608,6 +1969,9 @@ const filteredDeals = deals.filter((deal) => {
                                     deal
                                   )
                                 }
+                                disabled={
+                                deal.stage === "WON" ||
+                                deal.stage === "LOST"}
                               >
                                 Edit
                               </button>
@@ -1621,17 +1985,186 @@ const filteredDeals = deals.filter((deal) => {
                               >
                                 Delete
                               </button>
-                            </td>
-                          </tr>
-                        )
-                      )}
+                              
+                               {/* Reopen HERE */}
+                                {loggedInUser.role === "MANAGER" &&
+                                  (deal.stage === "WON" || deal.stage === "LOST") && (
+                                    <button
+                                      onClick={async () => {
+                                        if (!window.confirm("Reopen this deal?")) {
+                                          return;
+                                            }
+
+                                        try {
+                                          const response = await fetch(
+                                            `${API_URL}/deals/${deal.id}/reopen`,
+                                                {
+                                                    method: "POST",
+                                                    headers: {
+                                                    ...getAuthHeaders(),
+                                                    },
+                                                }
+                                              );
+
+                                              const data = await response.json(); 
+
+                                              if (!response.ok) {
+                                                throw new Error(
+                                                data.message || "Failed to reopen deal"
+                                                );
+                                              }
+
+                                              await fetchDeals();
+                                          } catch (error) {
+                                            console.error("Reopen error:", error);
+
+                                            setError(
+                                              error instanceof Error
+                                                  ? error.message
+                                                  : "Could not reopen deal"
+                                              );
+                                            }
+                                          }}
+                                        >
+                                        Reopen
+                                      </button>
+                                            )}
+                                  </td>
+                                </tr>
+                              )
+                            )}
                     </tbody>
                   </table>
                 )}
               </div>
             </>
           )}
-        </main>
+          
+          {/* USERS */}
+
+          {page === "users" &&
+            loggedInUser.role === "ADMIN" && (
+              <>
+                <h2>User Management</h2>
+
+                <div className="panel">
+                  <h3>Create User</h3>
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+
+                    try {
+                      const response = await fetch(`${API_URL}/users`, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          ...getAuthHeaders(),
+                        },
+                        body: JSON.stringify({
+                          name: userName,
+                          email: userEmail,
+                          password: userPassword,
+                          role: userRole,
+                        }),
+                      });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.message || "Failed to create user");
+                    }
+
+                    alert("User created successfully");
+
+                    setUserName("");
+                    setUserEmail("");
+                    setUserPassword("");
+                    setUserRole("SALES");
+
+                    fetchUsers();
+                  } catch (error) {
+                    console.error(error);
+                    alert(
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to create user"
+                    );
+                  }
+                }}
+              >
+                <input
+                  type="text"
+                  placeholder="Name"
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  required
+                />
+
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={userEmail}
+                  onChange={(e) => setUserEmail(e.target.value)}
+                  required
+                />
+
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={userPassword}
+                  onChange={(e) => setUserPassword(e.target.value)}
+                  required
+                />
+
+                <select
+                  value={userRole}
+                  onChange={(e) => setUserRole(e.target.value)}
+                >
+                  <option value="SALES">SALES</option>
+                  <option value="MANAGER">MANAGER</option>
+                  <option value="ADMIN">ADMIN</option>
+                </select>
+
+                <button type="submit">
+                    Create User
+                </button>
+              </form>
+          </div>
+
+          <div className="panel">
+              <h3>Users</h3>
+
+              {users.length === 0 ? (
+               <p>No users found.</p>
+             ) : (
+              <table>
+                <thead>
+                  <tr>
+                      <th>ID</th>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Role</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {users.map((user) => (
+                    <tr key={user.id}>
+                        <td>{user.id}</td>
+                        <td>{user.name}</td>
+                        <td>{user.email}</td>
+                        <td>{user.role}</td>
+                    </tr>
+                  ))}
+                </tbody>
+            </table>
+          )}
+        </div>
+      </>
+     )}
+          
+    </main>
       </div>
     </div>
   );

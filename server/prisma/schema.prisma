@@ -36,6 +36,7 @@ model Company {
   email         String?
   contactPerson String?
   industry      String?
+  isArchived    Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -51,6 +52,8 @@ model Deal {
   requirements      String?
   value             Decimal?
   stage             String
+  previousStage     String?
+  stageChangeReason String?
   expectedCloseDate DateTime?
   companyId         Int
   ownerId           Int
