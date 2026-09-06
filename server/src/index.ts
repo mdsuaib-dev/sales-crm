@@ -7,7 +7,7 @@ import jwt from "jsonwebtoken";
 import { authenticate, authorize } from "./middleware/auth.js";
 const app = express();
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
