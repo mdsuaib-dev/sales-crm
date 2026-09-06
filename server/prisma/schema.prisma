@@ -20,6 +20,7 @@ model User {
   email        String   @unique
   passwordHash String
   role         String
+  collaborations DealCollaborator[]
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -60,7 +61,21 @@ model Deal {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  collaborators DealCollaborator[]
   company           Company  @relation(fields: [companyId], references: [id])
   owner             User     @relation(fields: [ownerId], references: [id])
 }
 
+model DealCollaborator {
+  id        Int      @id @default(autoincrement())
+  dealId    Int
+  userId    Int
+  createdAt DateTime @default(now())
+
+  deal Deal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([dealId, userId])
+  @@index([dealId])
+  @@index([userId])
+}
