@@ -5,6 +5,11 @@ import prisma from "./prisma.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { authenticate, authorize } from "./middleware/auth.js";
+import {
+  listDealCollaborators,
+  addDealCollaborator,
+  removeDealCollaborator,
+} from "./features/dealCollaborators.js";
 const app = express();
 
 const PORT = process.env.PORT || 5000;
@@ -564,6 +569,23 @@ app.get("/api/deals", authenticate, async (req, res) => {
     });
   }
 });
+app.get(
+  "/api/deals/:id/collaborators",
+  authenticate,
+  listDealCollaborators
+);
+
+app.post(
+  "/api/deals/:id/collaborators",
+  authenticate,
+  addDealCollaborator
+);
+
+app.delete(
+  "/api/deals/:id/collaborators/:userId",
+  authenticate,
+  removeDealCollaborator
+);
 app.get("/api/deals/:id", authenticate,async (req, res) => {
   try {
     const id = Number(req.params.id);
