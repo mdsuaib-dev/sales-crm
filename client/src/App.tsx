@@ -1,4 +1,4 @@
-
+import DealCollaboratorsPanel from "./features/DealCollaboratorsPanel";
 import { useEffect, useState } from "react";
 
 type Company = {
@@ -1794,16 +1794,23 @@ const getAllowedNextStages = (currentStage: string) => {
                 <textarea
                   name="requirements"
                   placeholder="Requirements"
-                  value={
-                    dealForm.requirements
-                  }
-                  onChange={
-                    handleDealChange
-                  }
+                  value={dealForm.requirements}
+                  onChange={handleDealChange}
                 />
 
-                <div>
-                  <button type="submit">
+                {editingDealId && (
+                  <DealCollaboratorsPanel
+                    dealId={editingDealId}
+                    ownerId={Number(dealForm.ownerId)}
+                    apiUrl={API_URL}
+                    token={localStorage.getItem("salescrm_token") || ""}
+                    currentUserId={loggedInUser?.id ?? 0}
+                    currentUserRole={loggedInUser?.role ?? ""}
+                  />
+                )}
+
+                  <div>
+                    <button type="submit">
                     {editingDealId
                       ? "Update Deal"
                       : "Create Deal"}
@@ -2038,6 +2045,7 @@ const getAllowedNextStages = (currentStage: string) => {
 
                             <td>
                               <button
+                                type="button"
                                 onClick={() =>
                                   handleEditDeal(
                                     deal
@@ -2051,6 +2059,7 @@ const getAllowedNextStages = (currentStage: string) => {
                               </button>
 
                               <button
+                                type="button"
                                 onClick={() =>
                                   handleDeleteDeal(
                                     deal.id
