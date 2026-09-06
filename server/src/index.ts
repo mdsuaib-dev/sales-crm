@@ -5,9 +5,14 @@ import prisma from "./prisma.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { authenticate, authorize } from "./middleware/auth.js";
+import {
+  listDealCollaborators,
+  addDealCollaborator,
+  removeDealCollaborator,
+} from "./features/dealCollaborators.js";
 const app = express();
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
@@ -460,17 +465,34 @@ app.get("/api/deals", authenticate, async (req, res) => {
 
     const where: any = {};
 
-    if (stage) {
-      where.stage = stage;
-    }
+// SALES users can only see deals they own
+// or deals where they are collaborators.
+if (req.user?.role === "SALES") {
+  where.OR = [
+    {
+      ownerId: req.user.id,
+    },
+    {
+      collaborators: {
+        some: {
+          userId: req.user.id,
+        },
+      },
+    },
+  ];
+}
 
-    if (companyId && !isNaN(companyId)) {
-      where.companyId = companyId;
-    }
+if (stage) {
+  where.stage = stage;
+}
 
-    if (ownerId && !isNaN(ownerId)) {
-      where.ownerId = ownerId;
-    }
+if (companyId && !isNaN(companyId)) {
+  where.companyId = companyId;
+}
+
+if (ownerId && !isNaN(ownerId)) {
+  where.ownerId = ownerId;
+}
 
     if (search) {
       where.OR = [
@@ -516,7 +538,15 @@ app.get("/api/deals", authenticate, async (req, res) => {
         where,
         include: {
           company: true,
-          owner: true,
+          owner: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              isActive: true,
+            },
+          },
         },
         orderBy: {
           [safeSortBy]: safeOrder,
@@ -564,18 +594,59 @@ app.get("/api/deals", authenticate, async (req, res) => {
     });
   }
 });
-app.get("/api/deals/:id", authenticate,async (req, res) => {
+app.get(
+  "/api/deals/:id/collaborators",
+  authenticate,
+  listDealCollaborators
+);
+
+app.post(
+  "/api/deals/:id/collaborators",
+  authenticate,
+  addDealCollaborator
+);
+
+app.delete(
+  "/api/deals/:id/collaborators/:userId",
+  authenticate,
+  removeDealCollaborator
+);
+app.get("/api/deals/:id", authenticate, async (req, res) => {
   try {
     const id = Number(req.params.id);
 
-    const deal = await prisma.deal.findUnique({
+    const deal = await prisma.deal.findFirst({
       where: {
         id,
+        ...(req.user?.role === "SALES"
+          ? {
+              OR: [
+                {
+                  ownerId: req.user.id,
+                },
+                {
+                  collaborators: {
+                    some: {
+                      userId: req.user.id,
+                    },
+                  },
+                },
+              ],
+            }
+          : {}),
       },
       include: {
         company: true,
-        owner: true,
-      },
+        owner: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              isActive: true,
+            },
+          },
+        },
     });
 
     if (!deal) {
@@ -631,8 +702,16 @@ app.post(
           ownerId: Number(ownerId),
         },
         include: {
-          company: true,
-          owner: true,
+           company: true,
+          owner: {
+            select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isActive: true,
+          },
+          },
         },
       });
 
@@ -677,6 +756,24 @@ app.put(
           message: "Deal not found",
         });
       }
+      if (req.user?.role === "SALES") {
+  const isOwner = existingDeal.ownerId === req.user.id;
+
+  const isCollaborator = await prisma.dealCollaborator.findUnique({
+    where: {
+      dealId_userId: {
+        dealId: existingDeal.id,
+        userId: req.user.id,
+      },
+    },
+  });
+
+  if (!isOwner && !isCollaborator) {
+    return res.status(403).json({
+      message: "You do not have permission to update this deal",
+    });
+  }
+}
 
       let newStage = existingDeal.stage;
       let previousStage = existingDeal.previousStage;
@@ -736,7 +833,15 @@ app.put(
         },
         include: {
           company: true,
-          owner: true,
+          owner: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              isActive: true,
+            },
+          },
         },
       });
 
@@ -794,7 +899,15 @@ app.post(
         },
         include: {
           company: true,
-          owner: true,
+          owner: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              isActive: true,
+            },
+          },
         },
       });
 
@@ -980,7 +1093,7 @@ app.post("/api/login", async (req, res) => {
     },
     process.env.JWT_SECRET!,
     {
-      expiresIn: "8h",
+      expiresIn: "1d",
     }
     );
 
