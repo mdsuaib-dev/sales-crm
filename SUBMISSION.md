@@ -37,16 +37,14 @@ repository.
 ## Deployment
 
 Add the final deployed frontend URL here:
-
-``` text
-<DEPLOYED_FRONTEND_URL>
-```
+Live Application:
+https://sales-crm-client.onrender.com/
 
 Add the backend URL here if the submission instructions require it:
 
-``` text
-<DEPLOYED_BACKEND_URL>
-```
+Backend:
+https://sales-crm-tijk.onrender.com
+
 
 ## Known Scope Boundary
 
